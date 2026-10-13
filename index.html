@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบันทึกข้อมูลตำรวจ</title>
+    <!-- โหลดไลบรารีสำหรับสแกน QR Code -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; background: #f4f6f9; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; margin-top: 5px; }
+        button:hover { background: #0056b3; }
+        #reader { width: 100%; margin-bottom: 15px; }
+        .result-box { background: #e9ecef; padding: 10px; border-radius: 4px; margin-bottom: 15px; word-break: break-all; }
+        
+        /* สไตล์สำหรับกล่อง Checkbox รายการสถานที่ */
+        .checkbox-container {
+            max-height: 180px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fff;
+            border-radius: 4px;
+        }
+        .checkbox-item {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .checkbox-item input {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>บันทึกข้อมูลผ่าน QR Code</h2>
+
+    <!-- 1. ปุ่มและส่วนแสดงผลสแกน QR Code -->
+    <div class="form-group">
+        <label>1. สแกนคิวอาร์โค๊ด</label>
+        <button type="button" onclick="startScanner()">เปิดกล้องสแกน</button>
+        <div id="reader"></div>
+        <div class="result-box"><strong>ข้อมูล QR ที่สแกนได้:</strong> <span id="qrResult">-</span></div>
+    </div>
+
+    <!-- 3. กล่องกรอก ยศตำรวจ ชื่อ สกุล -->
+    <div class="form-group">
+        <label for="policeName">3. ยศ ชื่อ - สกุล</label>
+        <input type="text" id="policeName" placeholder="เช่น ร.ต.อ. สมชาย ใจดี">
+    </div>
+
+    <!-- เพิ่มเติม: Checkbox เลือกรายการสถานที่ 26 รายการ -->
+    <div class="form-group">
+        <label>เลือกรายการสถานที่ (เลือกได้มากกว่า 1 รายการ)</label>
+        <div class="checkbox-container" id="locationList">
+            <!-- รายการจะถูกสร้างอัตโนมัติด้วย JavaScript ด้านล่าง -->
+        </div>
+    </div>
+
+    <!-- 4. กล่องพิมพ์ข้อความ -->
+    <div class="form-group">
+        <label for="message">4. ข้อความเพิ่มเติม</label>
+        <textarea id="message" rows="3" placeholder="พิมพ์ข้อความที่ต้องการบันทึก..."></textarea>
+    </div>
+
+    <!-- ปุ่มบันทึกข้อมูลทั้งหมด -->
+    <button type="button" onclick="saveData()" style="background: #28a745;">บันทึกข้อมูลลง Google Sheets</button>
+
+<script>
+    let scannedData = "";
+    
+    // ** ใส่ URL เว็บแอป Google Apps Script ของคุณที่นี่ **
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzDbLKQvHbB6MQURKo5feE0tRGeqbYeWdGZdzEtFWD3jyVAWwEIFInW-K4U8hod9Wq4mw/exec";
+
+    // รายชื่อสถานที่ทั้ง 26 รายการ
+    const locations = [
+        "นางใหญ่", "ยงเจริญค้าเหล็ก", "ร๊อคซี่รรีสอร์ท", "โรงแรมอนนต์ธาดา", 
+        "โชคศิริมงคล", "พีเคโฮมเซนเตอร์", "พีเอ็มลวดตาข่าย", "บ้านครูโตส", 
+        "ทวีกิจสี่เหลี่ยมน้อย", "ปั้มน้ำมันพารุ่ง", "ทวีกิจทะเมนชัย", "เสี่ยตั้มหนองไฮ", 
+        "บุญมีเขียงหมู", "หมู่บ้านพรสวรรค์", "ซุ้มไก่เสี่ยเลย์", "ฉางข้าวพิธา", 
+        "พี่เนย", "ร้านค้าเฉอะ", "พี่สาวครูโตส", "โรงแป้ง", 
+        "ร้านเลิศทรัพย์", "ริมธารารีสอร์ท", "น้องแอน", "บ้านโคกสนวน", 
+        "ร้านค้าตลาดโพธิ์ ม.1", "ตลาดโพธิ์ ม.1(ใหม่)"
+    ];
+
+    // สร้าง Checkbox ลงในหน้าเว็บอัตโนมัติ
+    window.onload = function() {
+        const container = document.getElementById("locationList");
+        locations.forEach((loc, index) => {
+            const div = document.createElement("div");
+            div.className = "checkbox-item";
+            div.innerHTML = `<input type="checkbox" id="loc_${index}" value="${loc}">
+                             <label for="loc_${index}" style="font-weight:normal; margin-bottom:0; cursor:pointer;">${loc}</label>`;
+            container.appendChild(div);
+        });
+    };
+
+    // ฟังก์ชันเปิดกล้องสแกน
+    function startScanner() {
+        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        scanner.render((decodedText, decodedResult) => {
+            scannedData = decodedText;
+            document.getElementById("qrResult").innerText = scannedData;
+            scanner.clear(); 
+        }, (error) => {});
+    }
+
+    // ฟังก์ชันบันทึกข้อมูล
+    function saveData() {
+        const policeName = document.getElementById("policeName").value;
+        const message = document.getElementById("message").value;
+
+        if (!policeName) {
+            alert("กรุณากรอกยศ ชื่อ-สกุล ก่อนบันทึก");
+            return;
+        }
+
+        // ดึงรายการ Checkbox ที่ถูกเลือก
+        let selectedLocs = [];
+        locations.forEach((loc, index) => {
+            const checkbox = document.getElementById(`loc_${index}`);
+            if (checkbox && checkbox.checked) {
+                selectedLocs.push(loc);
+            }
+        });
+
+        const now = new Date();
+        const timestamp = now.toLocaleString("th-TH", { timeZone: "Asia/Bangkok" });
+
+        const formData = new URLSearchParams();
+        formData.append("timestamp", timestamp);
+        formData.append("policeName", policeName);
+        formData.append("selectedLocations", selectedLocs.join(", ")); // รวมรายชื่อที่เลือกคั่นด้วยคอมมา
+        formData.append("message", message);
+        formData.append("qrCodeData", scannedData || "ไม่มีข้อมูล QR");
+
+        fetch(WEB_APP_URL, {
+            method: "POST",
+            mode: "no-cors",
+            body: formData
+        }).then(() => {
+            alert("บันทึกข้อมูลสำเร็จ!");
+            document.getElementById("policeName").value = "";
+            document.getElementById("message").value = "";
+            document.getElementById("qrResult").innerText = "-";
+            
+            // ล้างค่า Checkbox ทั้งหมดหลังบันทึก
+            locations.forEach((loc, index) => {
+                const checkbox = document.getElementById(`loc_${index}`);
+                if (checkbox) checkbox.checked = false;
+            });
+
+            scannedData = "";
+        }).catch(error => {
+            console.error("Error:", error);
+            alert("เกิดข้อผิดพลาดในการบันทึก");
+        });
+    }
+</script>
+
+</body>
+</html>
